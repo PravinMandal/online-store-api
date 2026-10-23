@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const authRoutes = require('./routes/auth');
+const productRoutes = require('./routes/products');
 const { singleValueInput } = require('./middleware/validation');
 const errorHandler = require('./middleware/error');
 
@@ -17,6 +18,7 @@ app.get('/', (req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/products', productRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ success: false, message: 'Route not found' });
