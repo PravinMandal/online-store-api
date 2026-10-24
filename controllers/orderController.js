@@ -8,6 +8,17 @@ function httpError(status, message) {
   return error;
 }
 
+function parseDate(value, endOfDay) {
+  const date = new Date(value);
+
+  // A date like 2026-01-31 should include the whole day, not just midnight.
+  if (endOfDay && value.length === 10) {
+    date.setUTCHours(23, 59, 59, 999);
+  }
+
+  return date;
+}
+
 function cancelMessage(status) {
   if (status === 'shipped') {
     return 'This order has already been shipped and cannot be cancelled';
@@ -295,6 +306,66 @@ async function updateOrderStatus(req, res, next) {
   }
 }
 
+async function getSalesSummary(req, res, next) {
+  try {
+    const match = { status: { $ne: 'cancelled' } };
+
+    if (req.query.from || req.query.to) {
+      match.createdAt = {};
+      if (req.query.from) {
+        match.createdAt.$gte = parseDate(req.query.from, false);
+      }
+      if (req.query.to) {
+        match.createdAt.$lte = parseDate(req.query.to, true);
+      }
+    }
+
+    const [summary] = await Order.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: '$totalAmount' },
+          totalOrders: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const topProducts = await Order.aggregate([
+      { $match: match },
+      { $unwind: '$items' },
+      {
+        $group: {
+          _id: '$items.product',
+          name: { $first: '$items.name' },
+          totalQuantity: { $sum: '$items.quantity' },
+          revenue: { $sum: { $multiply: ['$items.price', '$items.quantity'] } },
+        },
+      },
+      { $sort: { totalQuantity: -1, _id: 1 } },
+      { $limit: 5 },
+      {
+        $project: {
+          _id: 0,
+          product: '$_id',
+          name: 1,
+          totalQuantity: 1,
+          revenue: { $round: ['$revenue', 2] },
+        },
+      },
+    ]);
+
+    return res.json({
+      success: true,
+      totalRevenue: summary ? Math.round(summary.totalRevenue * 100) / 100 : 0,
+      totalOrders: summary ? summary.totalOrders : 0,
+      topProducts,
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
 module.exports = {
   placeOrder,
   getMyOrders,
@@ -302,4 +373,5 @@ module.exports = {
   cancelOrder,
   getAllOrders,
   updateOrderStatus,
+  getSalesSummary,
 };
