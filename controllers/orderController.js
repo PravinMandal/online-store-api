@@ -210,4 +210,96 @@ async function cancelOrder(req, res, next) {
   }
 }
 
-module.exports = { placeOrder, getMyOrders, getOrder, cancelOrder };
+async function getAllOrders(req, res, next) {
+  try {
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 10;
+
+    const filter = {};
+    if (req.query.status) {
+      filter.status = req.query.status;
+    }
+    if (req.query.customer) {
+      filter.customer = req.query.customer;
+    }
+
+    const [data, total] = await Promise.all([
+      Order.find(filter)
+        .sort({ createdAt: -1, _id: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .populate('customer', 'name email'),
+      Order.countDocuments(filter),
+    ]);
+
+    return res.json({
+      success: true,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+      count: data.length,
+      data,
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function updateOrderStatus(req, res, next) {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    const nextStatus = { placed: 'shipped', shipped: 'delivered' };
+    const expected = nextStatus[order.status];
+
+    if (!expected) {
+      return res.status(400).json({
+        success: false,
+        message: `A ${order.status} order cannot be updated`,
+      });
+    }
+    if (req.body.status === 'cancelled') {
+      return res.status(400).json({
+        success: false,
+        message: 'Orders can only be cancelled by the customer',
+      });
+    }
+    if (req.body.status !== expected) {
+      return res.status(400).json({
+        success: false,
+        message: `Order status can only move from ${order.status} to ${expected}`,
+      });
+    }
+
+    // Only update if the status is still the one we checked. This stops a
+    // status change from overwriting a cancellation that happened meanwhile.
+    const updated = await Order.findOneAndUpdate(
+      { _id: order._id, status: order.status },
+      { $set: { status: req.body.status } },
+      { new: true, runValidators: true }
+    );
+
+    if (!updated) {
+      return res.status(409).json({
+        success: false,
+        message: 'Order status changed. Please refresh and try again',
+      });
+    }
+
+    return res.json({ success: true, message: 'Order status updated', order: updated });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+module.exports = {
+  placeOrder,
+  getMyOrders,
+  getOrder,
+  cancelOrder,
+  getAllOrders,
+  updateOrderStatus,
+};
