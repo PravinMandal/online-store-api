@@ -8,6 +8,16 @@ function httpError(status, message) {
   return error;
 }
 
+function cancelMessage(status) {
+  if (status === 'shipped') {
+    return 'This order has already been shipped and cannot be cancelled';
+  }
+  if (status === 'delivered') {
+    return 'This order has already been delivered and cannot be cancelled';
+  }
+  return 'This order has already been cancelled';
+}
+
 async function placeOrder(req, res, next) {
   // Values like [2] can pass the item validation, so check the shape again
   // before using them in stock calculations.
@@ -104,4 +114,100 @@ async function placeOrder(req, res, next) {
   }
 }
 
-module.exports = { placeOrder };
+async function getMyOrders(req, res, next) {
+  try {
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 10;
+
+    const filter = { customer: req.user._id };
+    if (req.query.status) {
+      filter.status = req.query.status;
+    }
+
+    const [data, total] = await Promise.all([
+      Order.find(filter)
+        .sort({ createdAt: -1, _id: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .populate('items.product', 'name price isActive stock'),
+      Order.countDocuments(filter),
+    ]);
+
+    return res.json({
+      success: true,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+      count: data.length,
+      data,
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function getOrder(req, res, next) {
+  try {
+    const order = await Order.findById(req.params.id)
+      .populate('customer', 'name email')
+      .populate('items.product', 'name price isActive stock');
+
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    const customerId = order.customer && order.customer._id ? order.customer._id : null;
+    const isOwner = customerId && customerId.toString() === req.user._id.toString();
+    if (!isOwner && req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'You can only view your own orders' });
+    }
+
+    return res.json({ success: true, message: 'Order fetched', order });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function cancelOrder(req, res, next) {
+  const session = await mongoose.startSession();
+
+  try {
+    await session.withTransaction(async () => {
+      const order = await Order.findById(req.params.id).session(session);
+
+      if (!order) {
+        throw httpError(404, 'Order not found');
+      }
+      if (order.customer.toString() !== req.user._id.toString()) {
+        throw httpError(403, 'You can only cancel your own orders');
+      }
+      if (order.status !== 'placed') {
+        throw httpError(409, cancelMessage(order.status));
+      }
+
+      // Put the stock back before marking the order as cancelled.
+      for (const item of order.items) {
+        await Product.updateOne(
+          { _id: item.product },
+          { $inc: { stock: item.quantity } },
+          { session }
+        );
+      }
+
+      order.status = 'cancelled';
+      await order.save({ session });
+    });
+
+    const order = await Order.findById(req.params.id).populate('customer', 'name email');
+    return res.json({ success: true, message: 'Order cancelled', order });
+  } catch (err) {
+    if (err.status) {
+      return res.status(err.status).json({ success: false, message: err.message });
+    }
+    return next(err);
+  } finally {
+    await session.endSession();
+  }
+}
+
+module.exports = { placeOrder, getMyOrders, getOrder, cancelOrder };
