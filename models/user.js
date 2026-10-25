@@ -40,7 +40,6 @@ userSchema.pre('save', async function () {
   this.password = await bcrypt.hash(this.password, 12);
 });
 
-// Even if a document is returned by mistake, the hash should not leave the API.
 userSchema.set('toJSON', {
   transform(doc, ret) {
     delete ret.password;

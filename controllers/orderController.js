@@ -11,7 +11,6 @@ function httpError(status, message) {
 function parseDate(value, endOfDay) {
   const date = new Date(value);
 
-  // A date like 2026-01-31 should include the whole day, not just midnight.
   if (endOfDay && value.length === 10) {
     date.setUTCHours(23, 59, 59, 999);
   }
@@ -30,8 +29,6 @@ function cancelMessage(status) {
 }
 
 async function placeOrder(req, res, next) {
-  // Values like [2] can pass the item validation, so check the shape again
-  // before using them in stock calculations.
   for (const item of req.body.items) {
     if (
       !item ||
@@ -66,7 +63,6 @@ async function placeOrder(req, res, next) {
       const orderItems = [];
       let totalAmount = 0;
 
-      // Check every item before changing any stock.
       for (const item of req.body.items) {
         const product = productMap.get(item.product.toLowerCase());
 
@@ -196,7 +192,6 @@ async function cancelOrder(req, res, next) {
         throw httpError(409, cancelMessage(order.status));
       }
 
-      // Put the stock back before marking the order as cancelled.
       for (const item of order.items) {
         await Product.updateOne(
           { _id: item.product },
@@ -285,8 +280,6 @@ async function updateOrderStatus(req, res, next) {
       });
     }
 
-    // Only update if the status is still the one we checked. This stops a
-    // status change from overwriting a cancellation that happened meanwhile.
     const updated = await Order.findOneAndUpdate(
       { _id: order._id, status: order.status },
       { $set: { status: req.body.status } },

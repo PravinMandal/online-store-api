@@ -3,9 +3,6 @@ const { body, param, query, validationResult } = require('express-validator');
 const ORDER_STATUSES = ['placed', 'shipped', 'delivered', 'cancelled'];
 const PRODUCT_SORT_FIELDS = ['price', '-price', 'name', '-name', 'createdAt', '-createdAt'];
 
-// express-validator checks every item when a value is an array, so repeated
-// query fields could slip through as a list. Scalars should arrive as a single
-// value. The items and shippingAddress fields are the exceptions.
 const SKIP_FIELDS = ['items', 'shippingAddress'];
 
 function singleValueInput(req, res, next) {
@@ -36,7 +33,6 @@ function handleValidation(req, res, next) {
   return next();
 }
 
-// new Date("2026-02-30") rolls over to March instead of failing.
 function checkDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
