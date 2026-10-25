@@ -2,16 +2,13 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/user');
 
 async function requireAuth(req, res, next) {
-  const header = req.headers.authorization;
+  const header = req.headers.authorization || '';
+  let token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
 
-  if (!header || !header.startsWith('Bearer ')) {
-    return res.status(401).json({
-      success: false,
-      message: 'Authentication required. Please provide a token',
-    });
+  if (!token && req.cookies) {
+    token = req.cookies.token;
   }
 
-  const token = header.slice(7).trim();
   if (!token) {
     return res.status(401).json({
       success: false,

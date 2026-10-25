@@ -9,6 +9,7 @@ The server is in charge of prices and stock. The customer sends product IDs and 
 - Node.js and Express
 - MongoDB with Mongoose
 - JWT authentication and bcrypt password hashing
+- httpOnly cookies for the JWT, read with cookie-parser
 - express-validator for request validation
 
 ## Project structure
@@ -86,11 +87,13 @@ Placing and cancelling orders use MongoDB transactions. Atlas supports them out 
 | PATCH  | `/api/orders/:id/cancel`    | Owner         | Cancel an order while it is still placed          |
 | PATCH  | `/api/orders/:id/status`    | Admin         | Move an order forward                             |
 
-Send the token in the header:
+Register and login set the JWT in an httpOnly cookie named `token`, so a browser sends it automatically on later requests. The token is also returned in the response for API clients. You can use either the cookie or the header:
 
 ```
 Authorization: Bearer <token>
 ```
+
+The cookie lasts 7 days and is marked `SameSite=Lax`. It is only marked `Secure` when `NODE_ENV=production`.
 
 ### Register body
 

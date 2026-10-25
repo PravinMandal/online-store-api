@@ -2,6 +2,13 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/user');
 
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax',
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+};
+
 function createToken(user) {
   if (!process.env.JWT_SECRET) {
     throw new Error('JWT_SECRET is not configured');
@@ -10,6 +17,10 @@ function createToken(user) {
   return jwt.sign({ id: user._id.toString() }, process.env.JWT_SECRET, {
     expiresIn: '7d',
   });
+}
+
+function setTokenCookie(res, token) {
+  res.cookie('token', token, COOKIE_OPTIONS);
 }
 
 function publicUser(user) {
@@ -40,10 +51,13 @@ async function register(req, res, next) {
       role: 'customer',
     });
 
+    const token = createToken(user);
+    setTokenCookie(res, token);
+
     return res.status(201).json({
       success: true,
       message: 'User registered successfully',
-      token: createToken(user),
+      token,
       user: publicUser(user),
     });
   } catch (err) {
@@ -60,10 +74,13 @@ async function login(req, res, next) {
       return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
 
+    const token = createToken(user);
+    setTokenCookie(res, token);
+
     return res.json({
       success: true,
       message: 'Login successful',
-      token: createToken(user),
+      token,
       user: publicUser(user),
     });
   } catch (err) {
